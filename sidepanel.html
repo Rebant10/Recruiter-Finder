@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recruiter Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="logo-group">
+        <div class="logo-icon">🎯</div>
+        <div>
+          <h1 class="logo-title">Recruiter Finder</h1>
+          <p class="logo-subtitle">Multi-source automated lead engine</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnSettings" class="icon-button" title="Configure API Keys & Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Search Section Card -->
+    <section class="card search-card">
+      <div class="form-group">
+        <label for="companyInput" class="form-label">Company Name</label>
+        <div class="input-with-action">
+          <input type="text" id="companyInput" class="form-input" placeholder="e.g. Flipkart, Google, Stripe, Razorpay" autocomplete="off" />
+          <button id="btnAutoDomain" class="btn-subtle" title="Detect domain">Detect</button>
+        </div>
+      </div>
+
+      <div class="form-group" id="domainGroup">
+        <label for="domainInput" class="form-label">Company Domain</label>
+        <input type="text" id="domainInput" class="form-input" placeholder="e.g. flipkart.com" />
+        <span class="form-hint">Auto-resolved from search or entered directly</span>
+      </div>
+
+      <div class="grid-2-col">
+        <div class="form-group">
+          <label for="roleSelect" class="form-label">Department / Role</label>
+          <select id="roleSelect" class="form-select">
+            <option value="recruiter" selected>Recruiter / Talent</option>
+            <option value="hr">HR & People</option>
+            <option value="hiring_manager">Hiring Manager</option>
+            <option value="all">All Employees</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="locationSelect" class="form-label">Location (SERP)</label>
+          <select id="locationSelect" class="form-select">
+            <option value="india" selected>India</option>
+            <option value="us">United States</option>
+            <option value="uk">United Kingdom</option>
+            <option value="any">Any Location</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2-col">
+        <div class="form-group">
+          <label for="targetCountInput" class="form-label">Target Count</label>
+          <input type="number" id="targetCountInput" class="form-input" value="20" min="1" max="200" />
+          <span class="form-hint">Stops querying APIs once reached</span>
+        </div>
+
+        <div class="form-group">
+          <label for="dedupSheetInput" class="form-label">Deduplicate with Sheet</label>
+          <input type="text" id="dedupSheetInput" class="form-input" placeholder="Google Sheet URL" />
+          <span class="form-hint">Skips contacts already in sheet</span>
+        </div>
+      </div>
+
+      <button id="btnFindEmails" class="btn-primary w-full">
+        <span class="btn-icon">⚡</span>
+        <span id="btnFindText">Find Recruiter Emails</span>
+      </button>
+    </section>
+
+    <!-- Progress Status Card (Hidden by default) -->
+    <section class="card progress-card" id="progressCard" style="display: none;">
+      <div class="progress-header">
+        <span class="progress-title" id="progressStatusText">Querying APIs...</span>
+        <span class="progress-counter" id="progressCounter">0 / 20</span>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar" id="progressBar" style="width: 0%;"></div>
+      </div>
+      <div class="service-pills" id="servicePills">
+        <!-- Dynamically rendered service badges -->
+      </div>
+    </section>
+
+    <!-- Results Section (Hidden until search completes) -->
+    <section class="card results-card" id="resultsCard" style="display: none;">
+      <div class="results-header">
+        <div>
+          <h2 class="section-title">Discovered Contacts</h2>
+          <div class="results-meta" id="resultsMeta">Found 0 contacts</div>
+        </div>
+        <div class="results-actions">
+          <button id="btnVerifyAll" class="btn-secondary btn-sm" title="Verify emails with QuickEmailVerification">
+            <span>✓ Verify All</span>
+          </button>
+          <button id="btnOpenExport" class="btn-success btn-sm">
+            <span>📥 Export to Sheet</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Pattern Alert Box -->
+      <div class="pattern-banner" id="patternBanner" style="display: none;">
+        <div class="pattern-info">
+          <span class="pattern-tag">Pattern Detected</span>
+          <span class="pattern-text" id="patternText">first.last@domain.com</span>
+          <span class="pattern-conf" id="patternConfidence">90% match</span>
+        </div>
+        <button id="btnTogglePattern" class="btn-ghost btn-sm">Use Pattern ▾</button>
+      </div>
+
+      <!-- Collapsible Pattern Generation Bonus -->
+      <div class="pattern-drawer" id="patternDrawer" style="display: none;">
+        <p class="drawer-desc">Have names from LinkedIn? Generate their emails instantly using the detected pattern:</p>
+        <textarea id="patternNamesInput" class="form-textarea" placeholder="Paste names, one per line:&#10;Priya Sharma&#10;Ankit Verma&#10;Rohan Das"></textarea>
+        <div class="drawer-actions">
+          <button id="btnGeneratePatternEmails" class="btn-secondary btn-sm">Generate & Add to Table</button>
+        </div>
+      </div>
+
+      <!-- Table Controls -->
+      <div class="table-controls">
+        <label class="checkbox-label">
+          <input type="checkbox" id="selectAllCheckbox" checked />
+          <span>Select All (<span id="selectedCount">0</span> selected)</span>
+        </label>
+        <div class="filter-search-box">
+          <input type="text" id="tableFilterInput" class="filter-input" placeholder="Filter results..." />
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div class="table-wrapper">
+        <table class="results-table" id="resultsTable">
+          <thead>
+            <tr>
+              <th width="32"></th>
+              <th>Name & Title</th>
+              <th>Email</th>
+              <th>Source</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="resultsTableBody">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Settings Modal -->
+    <div class="modal-backdrop" id="settingsModal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title">API Settings & Services</h2>
+            <p class="modal-subtitle">Add free API keys to unlock multi-source discovery</p>
+          </div>
+          <button id="btnCloseSettings" class="close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="settings-group">
+            <h3 class="settings-group-title">🎯 Direct Email Finders</h3>
+            <p class="settings-group-sub">Enter domain & receive recruiters with name, title & email.</p>
+            
+            <div class="service-row" data-service="hunter">
+              <div class="service-info">
+                <span class="service-icon">🏹</span>
+                <div>
+                  <span class="service-name">Hunter.io</span>
+                  <a href="https://hunter.io/users/sign_up" target="_blank" class="service-link">50/mo free ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="hunter" placeholder="API Key" />
+            </div>
+
+            <div class="service-row" data-service="snov">
+              <div class="service-info">
+                <span class="service-icon">📧</span>
+                <div>
+                  <span class="service-name">Snov.io</span>
+                  <a href="https://app.snov.io/register" target="_blank" class="service-link">50/mo free (userId:secret) ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="snov" placeholder="userId:clientSecret" />
+            </div>
+
+            <div class="service-row" data-service="tomba">
+              <div class="service-info">
+                <span class="service-icon">🔍</span>
+                <div>
+                  <span class="service-name">Tomba.io</span>
+                  <a href="https://app.tomba.io/auth/register" target="_blank" class="service-link">25/mo free ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="tomba" placeholder="API Key" />
+            </div>
+
+            <div class="service-row" data-service="getprospect">
+              <div class="service-info">
+                <span class="service-icon">📋</span>
+                <div>
+                  <span class="service-name">GetProspect</span>
+                  <a href="https://getprospect.com/signup" target="_blank" class="service-link">50/mo free ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="getprospect" placeholder="API Key" />
+            </div>
+
+            <div class="service-row" data-service="prospeo">
+              <div class="service-info">
+                <span class="service-icon">🎯</span>
+                <div>
+                  <span class="service-name">Prospeo.io</span>
+                  <a href="https://app.prospeo.io/register" target="_blank" class="service-link">75/mo free ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="prospeo" placeholder="API Key" />
+            </div>
+
+            <div class="service-row" data-service="dropcontact">
+              <div class="service-info">
+                <span class="service-icon">💧</span>
+                <div>
+                  <span class="service-name">Dropcontact</span>
+                  <a href="https://app.dropcontact.com/signup" target="_blank" class="service-link">50 trial ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="dropcontact" placeholder="API Key" />
+            </div>
+
+            <div class="service-row" data-service="anymailfinder">
+              <div class="service-info">
+                <span class="service-icon">📬</span>
+                <div>
+                  <span class="service-name">AnyMailFinder</span>
+                  <a href="https://anymailfinder.com/signup" target="_blank" class="service-link">100 trial ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="anymailfinder" placeholder="API Key" />
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <h3 class="settings-group-title">🌐 Web & SERP Search</h3>
+            <p class="settings-group-sub">Finds publicly posted emails via Google search.</p>
+
+            <div class="service-row" data-service="serper">
+              <div class="service-info">
+                <span class="service-icon">🌐</span>
+                <div>
+                  <span class="service-name">Serper.dev</span>
+                  <a href="https://serper.dev" target="_blank" class="service-link">2,500 credits free ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="serper" placeholder="API Key" />
+            </div>
+
+            <div class="service-row" data-service="serpapi">
+              <div class="service-info">
+                <span class="service-icon">🔎</span>
+                <div>
+                  <span class="service-name">SerpApi</span>
+                  <a href="https://serpapi.com/users/sign_up" target="_blank" class="service-link">250/mo free ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="serpapi" placeholder="API Key" />
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <h3 class="settings-group-title">✓ Email Verification</h3>
+            <p class="settings-group-sub">Verifies deliverability so you never bounce.</p>
+
+            <div class="service-row" data-service="quickemail">
+              <div class="service-info">
+                <span class="service-icon">✓</span>
+                <div>
+                  <span class="service-name">QuickEmailVerification</span>
+                  <a href="https://quickemailverification.com/register" target="_blank" class="service-link">100/day (~3,000/mo) ↗</a>
+                </div>
+              </div>
+              <input type="password" class="api-key-input" data-key="quickemail" placeholder="API Key" />
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <h3 class="settings-group-title">📊 Default Google Sheet</h3>
+            <p class="settings-group-sub">Optional default sheet for exports and deduplication.</p>
+            <input type="text" id="defaultSheetUrlInput" class="form-input" placeholder="https://docs.google.com/spreadsheets/d/..." />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btnCancelSettings" class="btn-secondary">Cancel</button>
+          <button id="btnSaveSettings" class="btn-primary">Save Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal-backdrop" id="exportModal" style="display: none;">
+      <div class="modal-content modal-sm">
+        <div class="modal-header">
+          <h2 class="modal-title">Export Contacts</h2>
+          <button id="btnCloseExport" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="radio-option">
+            <label class="radio-label">
+              <input type="radio" name="exportMode" value="new" checked />
+              <div>
+                <strong>Create New Spreadsheet</strong>
+                <p class="radio-sub">Creates a clean sheet formatted for Mass Mailer</p>
+              </div>
+            </label>
+          </div>
+
+          <div class="radio-option">
+            <label class="radio-label">
+              <input type="radio" name="exportMode" value="existing" />
+              <div>
+                <strong>Append to Existing Sheet</strong>
+                <p class="radio-sub">Adds to your active lead sheet without overwriting</p>
+              </div>
+            </label>
+          </div>
+
+          <div class="form-group" id="exportSheetGroup" style="display: none;">
+            <label for="exportSheetUrl" class="form-label">Google Sheet URL</label>
+            <input type="text" id="exportSheetUrl" class="form-input" placeholder="https://docs.google.com/spreadsheets/d/..." />
+          </div>
+
+          <div id="exportStatus" class="export-status" style="display: none;"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnCancelExport" class="btn-secondary">Cancel</button>
+          <button id="btnConfirmExport" class="btn-success">Export Now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+  </div>
+
+  <script src="finder.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
