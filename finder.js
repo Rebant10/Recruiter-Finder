@@ -50,9 +50,10 @@ function extractEmailsFromText(text, targetDomain) {
 // ═══════════════════════════════════════════════════════════════════
 
 const HR_KEYWORDS = [
-  'recruit', 'talent', 'hr ', 'human resource', 'people', 'hiring',
-  'staffing', 'workforce', 'h.r.', 'head of people', 'people ops',
-  'talent acquisition', 'campus', 'university relations'
+  'recruit', 'talent', 'hr', 'human resource', 'people', 'hiring',
+  'staffing', 'workforce', 'head of people', 'people ops',
+  'talent acquisition', 'campus', 'university relations', 'sourcer',
+  'headhunter', 'culture'
 ];
 
 function isHRTitle(title) {
@@ -62,17 +63,26 @@ function isHRTitle(title) {
 }
 
 function filterByRole(contacts, role) {
+  if (!contacts || contacts.length === 0) return [];
   if (role === 'all') return contacts;
-  return contacts.filter(c => {
+
+  const matched = contacts.filter(c => {
     if (!c.title) return false;
     const t = c.title.toLowerCase();
     switch (role) {
-      case 'recruiter':       return t.includes('recruit') || t.includes('talent') || t.includes('staffing');
-      case 'hr':              return isHRTitle(t);
-      case 'hiring_manager':  return t.includes('hiring') || t.includes('manager');
-      default:                return true;
+      case 'recruiter':
+      case 'hr':
+        return isHRTitle(t);
+      case 'hiring_manager':
+        return t.includes('hiring') || t.includes('manager') || t.includes('lead') || t.includes('director') || t.includes('head');
+      default:
+        return true;
     }
   });
+
+  // If matched contacts found, return them.
+  // Otherwise, fall back to returning discovered contacts so leads are not lost when titles are missing.
+  return matched.length > 0 ? matched : contacts;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -98,48 +108,125 @@ async function hunterSearch(domain, apiKey) {
 // ─── Snov.io ─────────────────────────────────────────────────────
 
 async function snovGetToken(apiKey) {
-  // Snov uses clientId + clientSecret; for simplicity we take the full key as "userId:secret"
-  // But actually Snov's API uses user_id and client_secret. We'll accept "userId:secret" format.
-  const [userId, secret] = apiKey.split(':');
-  if (!userId || !secret) throw new Error('Snov key format: userId:secret');
+  const raw = (apiKey || '').trim();
+  const colonIdx = raw.indexOf(':');
+  if (colonIdx === -1) {
+    throw new Error('Snov key format must be: userId:secret');
+  }
+  const userId = raw.slice(0, colonIdx).trim();
+  const secret = raw.slice(colonIdx + 1).trim();
+  if (!userId || !secret) {
+    throw new Error('Snov key format must be: userId:secret');
+  }
+
   const res = await fetch('https://api.snov.io/v1/oauth/access_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ grant_type: 'client_credentials', client_id: userId, client_secret: secret })
   });
-  if (!res.ok) throw new Error(`Snov auth ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Snov auth failed (${res.status}): ${err.message || 'Invalid credentials'}`);
+  }
   const data = await res.json();
+  if (!data.access_token) throw new Error('Snov auth: No access token returned');
   return data.access_token;
 }
 
 async function snovSearch(domain, apiKey) {
   const token = await snovGetToken(apiKey);
-  const res = await fetch('https://api.snov.io/v2/domain-search', {
+
+  // Step 1: Start domain email search (Snov expects form-encoded body)
+  const startUrl = `https://api.snov.io/v2/domain-search/domain-emails/start?domain=${encodeURIComponent(domain)}`;
+  const startRes = await fetch(startUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ domain, limit: 20 })
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Bearer ${token}`
+    },
+    body: `domain=${encodeURIComponent(domain)}`
   });
-  if (!res.ok) throw new Error(`Snov ${res.status}`);
-  const data = await res.json();
-  return (data.emails || data.result?.emails || []).map(e => ({
-    email:  e.email || e.value || '',
-    name:   [e.firstName || e.first_name, e.lastName || e.last_name].filter(Boolean).join(' ') || '',
-    title:  e.position || e.title || '',
-    source: 'snov',
-    confidence: e.confidence || 0
-  }));
+
+  if (!startRes.ok) {
+    const err = await startRes.json().catch(() => ({}));
+    throw new Error(`Snov start error (${startRes.status}): ${err.message || err.error || startRes.statusText}`);
+  }
+
+  const startData = await startRes.json();
+  const taskHash = startData.task_hash || startData.data?.task_hash;
+
+  const directList = startData.emails || startData.data?.emails || (Array.isArray(startData.data) ? startData.data : null);
+  if (directList && directList.length > 0) {
+    return directList.map(e => ({
+      email:  e.email || e.value || '',
+      name:   [e.firstName || e.first_name, e.lastName || e.last_name].filter(Boolean).join(' ') || '',
+      title:  e.position || e.title || '',
+      source: 'snov',
+      confidence: 85
+    })).filter(c => c.email);
+  }
+
+  if (!taskHash) {
+    throw new Error(`Snov: No task hash returned from start (${JSON.stringify(startData)})`);
+  }
+
+  for (let attempt = 0; attempt < 7; attempt++) {
+    await new Promise(r => setTimeout(r, 1800));
+    try {
+      const res = await fetch(`https://api.snov.io/v2/domain-search/domain-emails/result/${taskHash}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) continue;
+
+      const json = await res.json();
+      const emails = json.data?.emails || json.emails || (Array.isArray(json.data) ? json.data : null);
+
+      if (emails && Array.isArray(emails) && emails.length > 0) {
+        return emails.map(e => ({
+          email:  e.email || e.value || '',
+          name:   [e.firstName || e.first_name, e.lastName || e.last_name].filter(Boolean).join(' ') || '',
+          title:  e.position || e.title || '',
+          source: 'snov',
+          confidence: 85
+        })).filter(c => c.email);
+      }
+
+      if (json.status === 'completed' || json.data?.status === 'completed') {
+        break;
+      }
+    } catch (_) {
+    }
+  }
+
+  return [];
 }
 
 // ─── Tomba.io ────────────────────────────────────────────────────
 
 async function tombaSearch(domain, apiKey) {
-  const url = `https://api.tomba.io/v1/domain-search?domain=${encodeURIComponent(domain)}&department=human_resources&limit=20`;
-  const res = await fetch(url, {
-    headers: { 'X-Tomba-Key': apiKey, 'Content-Type': 'application/json' }
+  let url = `https://api.tomba.io/v1/domain-search?domain=${encodeURIComponent(domain)}&department=human_resources&limit=20`;
+  let res = await fetch(url, {
+    headers: { 'X-Tomba-Key': apiKey.trim(), 'Content-Type': 'application/json' }
   });
-  if (!res.ok) throw new Error(`Tomba ${res.status}`);
-  const data = await res.json();
-  return (data.data?.emails || []).map(e => ({
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Tomba (${res.status}): ${err.message || res.statusText}`);
+  }
+  let data = await res.json();
+  let emails = data.data?.emails || [];
+
+  if (emails.length === 0) {
+    url = `https://api.tomba.io/v1/domain-search?domain=${encodeURIComponent(domain)}&limit=20`;
+    res = await fetch(url, {
+      headers: { 'X-Tomba-Key': apiKey.trim(), 'Content-Type': 'application/json' }
+    });
+    if (res.ok) {
+      data = await res.json();
+      emails = data.data?.emails || [];
+    }
+  }
+
+  return emails.map(e => ({
     email:  e.email || '',
     name:   [e.first_name, e.last_name].filter(Boolean).join(' ') || '',
     title:  e.position || '',
@@ -153,9 +240,9 @@ async function tombaSearch(domain, apiKey) {
 async function getProspectSearch(domain, apiKey) {
   const url = `https://api.getprospect.com/api/v1/emails/search?domain=${encodeURIComponent(domain)}&limit=20`;
   const res = await fetch(url, {
-    headers: { 'apiKey': apiKey, 'Content-Type': 'application/json' }
+    headers: { 'apiKey': apiKey.trim(), 'Content-Type': 'application/json' }
   });
-  if (!res.ok) throw new Error(`GetProspect ${res.status}`);
+  if (!res.ok) throw new Error(`GetProspect (${res.status})`);
   const data = await res.json();
   return (data.data || data.emails || data.results || []).map(e => ({
     email:  e.email || e.value || '',
@@ -171,10 +258,10 @@ async function getProspectSearch(domain, apiKey) {
 async function prospeoSearch(domain, apiKey) {
   const res = await fetch('https://api.prospeo.io/domain-search', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey.trim() },
     body: JSON.stringify({ company: domain, limit: 20 })
   });
-  if (!res.ok) throw new Error(`Prospeo ${res.status}`);
+  if (!res.ok) throw new Error(`Prospeo (${res.status})`);
   const data = await res.json();
   return (data.response?.emails || data.emails || []).map(e => ({
     email:  e.email || '',
@@ -190,15 +277,14 @@ async function prospeoSearch(domain, apiKey) {
 async function dropcontactSearch(domain, apiKey) {
   const res = await fetch('https://api.dropcontact.com/batch', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Access-Token': apiKey },
+    headers: { 'Content-Type': 'application/json', 'X-Access-Token': apiKey.trim() },
     body: JSON.stringify({
       data: [{ company: domain }],
       siren: false, language: 'en'
     })
   });
-  if (!res.ok) throw new Error(`Dropcontact ${res.status}`);
+  if (!res.ok) throw new Error(`Dropcontact (${res.status})`);
   const data = await res.json();
-  // Dropcontact is enrichment-first; it may return differently
   const contacts = data.data || [];
   return contacts.filter(c => c.email).map(c => ({
     email:  c.email || '',
@@ -214,10 +300,10 @@ async function dropcontactSearch(domain, apiKey) {
 async function anyMailFinderSearch(domain, apiKey) {
   const res = await fetch('https://api.anymailfinder.com/v5/search/company.json', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey.trim()}` },
     body: JSON.stringify({ domain })
   });
-  if (!res.ok) throw new Error(`AnyMailFinder ${res.status}`);
+  if (!res.ok) throw new Error(`AnyMailFinder (${res.status})`);
   const data = await res.json();
   const emails = data.emails || data.results || [];
   if (Array.isArray(emails) && typeof emails[0] === 'string') {
@@ -237,10 +323,10 @@ async function anyMailFinderSearch(domain, apiKey) {
 async function serperSearch(query, apiKey) {
   const res = await fetch('https://google.serper.dev/search', {
     method: 'POST',
-    headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+    headers: { 'X-API-KEY': apiKey.trim(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ q: query, num: 20 })
   });
-  if (!res.ok) throw new Error(`Serper ${res.status}`);
+  if (!res.ok) throw new Error(`Serper (${res.status})`);
   const data = await res.json();
   return data.organic || [];
 }
@@ -248,50 +334,118 @@ async function serperSearch(query, apiKey) {
 // ─── SERP: SerpApi ───────────────────────────────────────────────
 
 async function serpApiSearch(query, apiKey) {
-  const url = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${encodeURIComponent(apiKey)}&num=20`;
+  const url = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${encodeURIComponent(apiKey.trim())}&num=20`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`SerpApi ${res.status}`);
+  if (!res.ok) throw new Error(`SerpApi (${res.status})`);
   const data = await res.json();
   return data.organic_results || [];
 }
 
-// ─── SERP orchestrator ───────────────────────────────────────────
+// ─── LinkedIn X-Ray Parser ────────────────────────────────────────
 
-async function searchViaSERP(domain, location, apiKeys) {
-  const roleTerms = 'recruiter OR "talent acquisition" OR "HR manager" OR "hiring"';
+function parseLinkedInResult(item, domain, patternId = 'first.last') {
+  if (!item || !item.title) return null;
+  const rawTitle = item.title;
+
+  // Clean off " | LinkedIn" or "- LinkedIn"
+  let clean = rawTitle.replace(/\s*[-–—|]\s*LinkedIn.*$/i, '').trim();
+
+  // Split on dash, en-dash, em-dash, or pipe
+  const parts = clean.split(/\s*[-–—|]\s*/);
+  if (parts.length < 2) return null;
+
+  const fullName = parts[0].trim();
+  const nameWords = fullName.split(/\s+/);
+  // Name should be 2 to 4 words, alphabetic only
+  if (nameWords.length < 2 || nameWords.length > 4) return null;
+  if (!/^[a-zA-Z\s.']{2,35}$/.test(fullName)) return null;
+
+  // Extract job title
+  let jobTitle = parts.slice(1).join(' - ').trim();
+  jobTitle = jobTitle.replace(/\s+(at|@|-)\s+.*$/i, '').trim();
+
+  const firstName = nameWords[0].replace(/[^a-zA-Z]/g, '');
+  const lastName = nameWords[nameWords.length - 1].replace(/[^a-zA-Z]/g, '');
+  if (!firstName || !lastName) return null;
+
+  const email = generateEmail(firstName, lastName, domain, patternId || 'first.last');
+
+  return {
+    email: email.toLowerCase(),
+    name: fullName,
+    title: jobTitle || 'Recruiter',
+    source: 'serper',
+    confidence: 90
+  };
+}
+
+// ─── SERP orchestrator (LinkedIn X-Ray + Public Emails) ───────────
+
+async function searchViaSERP(domain, location, apiKeys, companyName = '') {
+  const company = companyName || domain.split('.')[0];
   const locTerm = location !== 'any' ? ` ${location}` : '';
-  const query = `"@${domain}" ${roleTerms}${locTerm}`;
-
   const results = [];
+  const seen = new Set();
 
-  // Try Serper first
-  if (apiKeys.serper) {
-    try {
-      const organic = await serperSearch(query, apiKeys.serper);
-      for (const item of organic) {
-        const text = `${item.title || ''} ${item.snippet || ''}`;
-        const emails = extractEmailsFromText(text, domain);
-        for (const email of emails) {
-          results.push({ email, name: '', title: '', source: 'serper', confidence: 0 });
-        }
-      }
-    } catch (_) { /* skip */ }
+  function addContact(contact) {
+    if (!contact || !contact.email) return;
+    const key = contact.email.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push(contact);
+    }
   }
 
-  // Try SerpApi
+  // 1. LinkedIn X-Ray Search: finds real recruiters currently working at the company
+  const linkedinQuery = `site:linkedin.com/in "${company}" ("recruiter" OR "talent acquisition" OR "human resources" OR "hiring manager" OR "talent partner")${locTerm}`;
+
+  if (apiKeys.serper) {
+    try {
+      const organic = await serperSearch(linkedinQuery, apiKeys.serper);
+      for (const item of organic) {
+        const contact = parseLinkedInResult(item, domain);
+        if (contact) addContact(contact);
+      }
+    } catch (_) { }
+  }
+
   if (apiKeys.serpapi) {
     try {
-      const organic = await serpApiSearch(query, apiKeys.serpapi);
+      const organic = await serpApiSearch(linkedinQuery, apiKeys.serpapi);
+      for (const item of organic) {
+        const contact = parseLinkedInResult(item, domain);
+        if (contact) addContact(contact);
+      }
+    } catch (_) { }
+  }
+
+  // 2. Direct Public Email Search: finds explicitly shared emails with domain
+  const publicEmailQuery = `"@${domain}" ("recruiter" OR "talent" OR "HR" OR "hiring")${locTerm}`;
+
+  if (apiKeys.serper) {
+    try {
+      const organic = await serperSearch(publicEmailQuery, apiKeys.serper);
       for (const item of organic) {
         const text = `${item.title || ''} ${item.snippet || ''}`;
         const emails = extractEmailsFromText(text, domain);
         for (const email of emails) {
-          if (!results.some(r => r.email === email)) {
-            results.push({ email, name: '', title: '', source: 'serpapi', confidence: 0 });
-          }
+          addContact({ email, name: '', title: 'Recruiter', source: 'serper', confidence: 80 });
         }
       }
-    } catch (_) { /* skip */ }
+    } catch (_) { }
+  }
+
+  if (apiKeys.serpapi) {
+    try {
+      const organic = await serpApiSearch(publicEmailQuery, apiKeys.serpapi);
+      for (const item of organic) {
+        const text = `${item.title || ''} ${item.snippet || ''}`;
+        const emails = extractEmailsFromText(text, domain);
+        for (const email of emails) {
+          addContact({ email, name: '', title: 'Recruiter', source: 'serpapi', confidence: 80 });
+        }
+      }
+    } catch (_) { }
   }
 
   return results;
@@ -301,18 +455,9 @@ async function searchViaSERP(domain, location, apiKeys) {
 //  MAIN SEARCH ORCHESTRATOR — Sequential + Smart Dedup
 // ═══════════════════════════════════════════════════════════════════
 
-/**
- * @param {string}   domain       - Company domain
- * @param {string}   role         - 'recruiter' | 'hr' | 'hiring_manager' | 'all'
- * @param {string}   location     - 'india' | 'us' | 'uk' | 'any'
- * @param {number}   targetCount  - How many emails the user wants
- * @param {Object}   apiKeys      - { hunter: 'key', snov: 'uid:secret', ... }
- * @param {string[]} existingEmails - Emails already in the target sheet (skip these)
- * @param {Function} onProgress   - callback({ service, status, found, total })
- * @returns {Promise<{ results: Array, pattern: Object|null }>}
- */
-async function searchAll(domain, role, location, targetCount, apiKeys, existingEmails = [], onProgress = () => {}) {
+async function searchAll(domain, role, location, targetCount, apiKeys, existingEmails = [], onProgress = () => {}, companyName = '') {
   const allResults = [];
+  const serviceLogs = [];
   const seenEmails = new Set(existingEmails.map(e => e.toLowerCase()));
 
   function addResults(newContacts) {
@@ -324,7 +469,24 @@ async function searchAll(domain, role, location, targetCount, apiKeys, existingE
     }
   }
 
-  // Phase 1: Email finder APIs (sequential — stop when target reached)
+  // Phase 1: Google LinkedIn X-Ray (if Serper or SerpApi is configured)
+  // This is the most reliable, free-tier-friendly source that never requires a work email!
+  if (apiKeys.serper || apiKeys.serpapi) {
+    onProgress({ service: 'serper', status: 'searching', found: allResults.length, total: targetCount });
+    try {
+      const serpResults = await searchViaSERP(domain, location, apiKeys, companyName);
+      let filtered = serpResults;
+      if (role !== 'all') filtered = filterByRole(serpResults, role);
+      addResults(filtered);
+      serviceLogs.push({ service: 'serper', status: 'done', count: filtered.length });
+      onProgress({ service: 'serper', status: 'done', found: allResults.length, total: targetCount });
+    } catch (err) {
+      serviceLogs.push({ service: 'serper', status: 'error', error: err.message });
+      onProgress({ service: 'serper', status: 'error', error: err.message, found: allResults.length, total: targetCount });
+    }
+  }
+
+  // Phase 2: Direct Finder APIs (Hunter, Snov, Tomba, etc.)
   for (const serviceId of FINDER_ORDER) {
     if (allResults.length >= targetCount) break;
     if (!apiKeys[serviceId]) continue;
@@ -342,11 +504,12 @@ async function searchAll(domain, role, location, targetCount, apiKeys, existingE
         case 'dropcontact':   contacts = await dropcontactSearch(domain, apiKeys.dropcontact); break;
         case 'anymailfinder': contacts = await anyMailFinderSearch(domain, apiKeys.anymailfinder); break;
       }
-      // Filter by role
       if (role !== 'all') contacts = filterByRole(contacts, role);
       addResults(contacts);
+      serviceLogs.push({ service: serviceId, status: 'done', count: contacts.length });
       onProgress({ service: serviceId, status: 'done', found: allResults.length, total: targetCount });
     } catch (err) {
+      serviceLogs.push({ service: serviceId, status: 'error', error: err.message });
       onProgress({ service: serviceId, status: 'error', error: err.message, found: allResults.length, total: targetCount });
     }
   }
@@ -357,8 +520,10 @@ async function searchAll(domain, role, location, targetCount, apiKeys, existingE
     try {
       const serpResults = await searchViaSERP(domain, location, apiKeys);
       addResults(serpResults);
+      serviceLogs.push({ service: 'serp', status: 'done', count: serpResults.length });
       onProgress({ service: 'serp', status: 'done', found: allResults.length, total: targetCount });
     } catch (err) {
+      serviceLogs.push({ service: 'serp', status: 'error', error: err.message });
       onProgress({ service: 'serp', status: 'error', error: err.message, found: allResults.length, total: targetCount });
     }
   }
@@ -369,7 +534,69 @@ async function searchAll(domain, role, location, targetCount, apiKeys, existingE
   // Detect pattern
   const pattern = detectPattern(finalResults.map(r => r.email), domain);
 
-  return { results: finalResults, pattern };
+  return { results: finalResults, pattern, logs: serviceLogs };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TEST SERVICE API KEYS
+// ═══════════════════════════════════════════════════════════════════
+
+async function testServiceKey(serviceId, apiKey) {
+  if (!apiKey || !apiKey.trim()) throw new Error('Key is empty');
+  const key = apiKey.trim();
+
+  switch (serviceId) {
+    case 'snov': {
+      const token = await snovGetToken(key);
+      const testRes = await fetch('https://api.snov.io/v2/domain-search/domain-emails/start?domain=snov.io', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Bearer ${token}`
+        },
+        body: 'domain=snov.io'
+      });
+      if (!testRes.ok) {
+        const err = await testRes.json().catch(() => ({}));
+        throw new Error(`Auth OK, but search rejected (${testRes.status}): ${err.message || err.error || testRes.statusText}`);
+      }
+      const testData = await testRes.json();
+      if (!testData.task_hash && !testData.data?.task_hash && !testData.emails) {
+        throw new Error(`Snov response: ${JSON.stringify(testData)}`);
+      }
+      return 'Connected! Domain search verified';
+    }
+    case 'tomba': {
+      const res = await fetch('https://api.tomba.io/v1/me', {
+        headers: { 'X-Tomba-Key': key }
+      });
+      if (!res.ok) throw new Error(`Tomba (${res.status})`);
+      const data = await res.json();
+      return `Valid! Left: ${data.data?.requests?.left ?? '25'}`;
+    }
+    case 'hunter': {
+      const res = await fetch(`https://api.hunter.io/v2/account?api_key=${encodeURIComponent(key)}`);
+      if (!res.ok) throw new Error(`Hunter (${res.status})`);
+      const data = await res.json();
+      return `Valid! Plan: ${data.data?.plan_name || 'Free'}`;
+    }
+    case 'serper': {
+      const res = await fetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: 'test', num: 1 })
+      });
+      if (!res.ok) throw new Error(`Serper (${res.status})`);
+      return 'Valid! Serper active';
+    }
+    case 'quickemail': {
+      const res = await fetch(`https://api.quickemailverification.com/v1/verify?email=test@example.com&apikey=${encodeURIComponent(key)}`);
+      if (!res.ok) throw new Error(`QEV (${res.status})`);
+      return 'Valid! QuickEmail active';
+    }
+    default:
+      return 'Key saved';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -450,37 +677,85 @@ function generateAllPatterns(firstName, lastName, domain) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  EMAIL VERIFICATION
+//  EMAIL VERIFICATION (Google Public DNS MX — Zero Signup, Unlimited)
 // ═══════════════════════════════════════════════════════════════════
 
-async function quickEmailVerify(email, apiKey) {
-  const url = `https://api.quickemailverification.com/v1/verify?email=${encodeURIComponent(email)}&apikey=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`QEV ${res.status}`);
-  const data = await res.json();
-  // result: 'valid', 'invalid', 'unknown'
-  return {
-    email,
-    result: data.result || 'unknown',
-    disposable: data.disposable === 'true',
-    reason: data.reason || ''
-  };
+const DISPOSABLE_DOMAINS = new Set([
+  'mailinator.com', 'tempmail.com', 'guerrillamail.com', '10minutemail.com',
+  'throwawaymail.com', 'yopmail.com', 'trashmail.com', 'sharklasers.com',
+  'getairmail.com', 'temp-mail.org', 'fakeinbox.com', 'dispostable.com',
+  'generator.email', 'tempail.com', 'burnermail.io'
+]);
+
+function parseDnsResponse(email, dnsData) {
+  if (dnsData.Status === 0 && Array.isArray(dnsData.Answer) && dnsData.Answer.length > 0) {
+    const mxHosts = dnsData.Answer.map(a => (a.data || '').toLowerCase()).join(' ');
+    let provider = 'Active Mail Server';
+    if (mxHosts.includes('google') || mxHosts.includes('googlemail') || mxHosts.includes('l.google.com')) {
+      provider = 'Google Workspace';
+    } else if (mxHosts.includes('outlook') || mxHosts.includes('microsoft')) {
+      provider = 'Microsoft 365';
+    } else if (mxHosts.includes('mimecast') || mxHosts.includes('pphosted') || mxHosts.includes('barracuda')) {
+      provider = 'Enterprise Security Gateway';
+    } else if (mxHosts.includes('zoho')) {
+      provider = 'Zoho Mail';
+    }
+    return { email, result: 'valid', reason: provider, disposable: false };
+  } else if (dnsData.Status === 3) {
+    return { email, result: 'invalid', reason: 'Domain does not exist', disposable: false };
+  } else {
+    return { email, result: 'invalid', reason: 'Domain has no active mail server (MX)', disposable: false };
+  }
 }
 
-async function bulkVerify(emails, apiKey, onVerified = () => {}) {
+async function verifyEmailDNS(email) {
+  if (!email || !email.includes('@')) {
+    return { email, result: 'invalid', reason: 'Invalid email syntax', disposable: false };
+  }
+
+  const [localPart, domain] = email.toLowerCase().trim().split('@');
+  if (!localPart || !domain || !domain.includes('.')) {
+    return { email, result: 'invalid', reason: 'Malformed domain', disposable: false };
+  }
+
+  if (DISPOSABLE_DOMAINS.has(domain)) {
+    return { email, result: 'invalid', reason: 'Disposable email provider', disposable: true };
+  }
+
+  try {
+    const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=MX`);
+    if (!res.ok) {
+      const cfRes = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=MX`, {
+        headers: { 'Accept': 'application/dns-json' }
+      });
+      if (cfRes.ok) {
+        const cfData = await cfRes.json();
+        return parseDnsResponse(email, cfData);
+      }
+      return { email, result: 'unknown', reason: 'DNS query error', disposable: false };
+    }
+
+    const data = await res.json();
+    return parseDnsResponse(email, data);
+  } catch (err) {
+    return { email, result: 'unknown', reason: err.message || 'Network error', disposable: false };
+  }
+}
+
+async function bulkVerify(emails, _apiKey = '', onVerified = () => {}) {
   const results = [];
   for (let i = 0; i < emails.length; i++) {
     try {
-      const result = await quickEmailVerify(emails[i], apiKey);
+      const result = await verifyEmailDNS(emails[i]);
       results.push(result);
       onVerified({ index: i, total: emails.length, result });
     } catch (err) {
-      results.push({ email: emails[i], result: 'unknown', reason: err.message });
-      onVerified({ index: i, total: emails.length, result: { email: emails[i], result: 'error' } });
+      const fallback = { email: emails[i], result: 'unknown', reason: err.message };
+      results.push(fallback);
+      onVerified({ index: i, total: emails.length, result: fallback });
     }
-    // Rate limit: 1 request per second
     if (i < emails.length - 1) {
-      await new Promise(r => setTimeout(r, 1100));
+      await new Promise(r => setTimeout(r, 120));
     }
   }
   return results;

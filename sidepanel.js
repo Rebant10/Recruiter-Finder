@@ -200,24 +200,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  function updateServicePill(serviceId, status) {
+  function updateServicePill(serviceId, status, errorMsg) {
     const pill = document.getElementById(`pill-${serviceId}`);
     if (!pill) return;
     pill.className = `service-pill ${status}`;
-    if (status === 'active') pill.innerHTML += ' <span style="font-size:9px">⏳</span>';
+    const sMeta = SERVICES[serviceId] || { icon: '🔍', name: serviceId };
+    if (status === 'active') {
+      pill.innerHTML = `<span>${sMeta.icon}</span> <span>${sMeta.name}</span> <span style="font-size:9px">⏳</span>`;
+    } else if (status === 'error') {
+      pill.title = errorMsg || 'Error querying service';
+      pill.innerHTML = `<span>${sMeta.icon}</span> <span>${sMeta.name}</span> <span style="font-size:9px">⚠️</span>`;
+    } else if (status === 'done') {
+      pill.innerHTML = `<span>${sMeta.icon}</span> <span>${sMeta.name}</span> <span style="font-size:9px">✓</span>`;
+    }
   }
 
   // ─── Progress Listener from Worker ───────────────────────────────
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'searchProgress') {
-      const { service, status, found, total } = msg;
+      const { service, status, found, total, error } = msg;
       if (status === 'searching') {
         progressStatusText.textContent = `Querying ${SERVICES[service]?.name || service}...`;
         updateServicePill(service, 'active');
       } else if (status === 'done') {
         updateServicePill(service, 'done');
       } else if (status === 'error') {
-        updateServicePill(service, 'error');
+        updateServicePill(service, 'error', error);
+        if (error) {
+          showToast(`${SERVICES[service]?.name || service}: ${error}`, 'error');
+        }
       }
       progressCounter.textContent = `${found} / ${total}`;
       const pct = Math.min(100, Math.round((found / total) * 100));
@@ -312,8 +323,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       }));
       state.pattern = resp.pattern;
 
-      renderResults();
-      showToast(`Discovered ${state.results.length} contacts!`, 'success');
+      renderResults(resp.logs || []);
+      if (state.results.length > 0) {
+        showToast(`Discovered ${state.results.length} contacts!`, 'success');
+      } else {
+        showToast('0 contacts discovered — check diagnostics below', 'info');
+      }
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -323,10 +338,82 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // ─── Test API Key Buttons ─────────────────────────────────────────
+  document.querySelectorAll('.btn-test-key').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const serviceId = btn.dataset.service;
+      const row = btn.closest('.service-row');
+      const input = row?.querySelector('.api-key-input');
+      const key = input ? input.value.trim() : '';
+
+      if (!key) {
+        showToast(`Please enter an API key for ${SERVICES[serviceId]?.name || serviceId}`, 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const resp = await chrome.runtime.sendMessage({
+          action: 'testService',
+          service: serviceId,
+          apiKey: key
+        });
+
+        if (resp && resp.success) {
+          btn.style.color = '#34d399';
+          btn.textContent = '✓ OK';
+          showToast(`${SERVICES[serviceId]?.name || serviceId}: ${resp.message}`, 'success');
+        } else {
+          btn.style.color = '#f87171';
+          btn.textContent = '✕ Failed';
+          showToast(`${SERVICES[serviceId]?.name || serviceId}: ${resp?.error || 'Test failed'}`, 'error');
+        }
+      } catch (e) {
+        btn.style.color = '#f87171';
+        btn.textContent = '✕ Error';
+        showToast(e.message, 'error');
+      } finally {
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = 'Test';
+          btn.style.color = '';
+        }, 3500);
+      }
+    });
+  });
+
   // ─── Results Rendering ───────────────────────────────────────────
-  function renderResults() {
+  function renderResults(logs = []) {
     resultsCard.style.display = 'flex';
     resultsMeta.textContent = `Found ${state.results.length} unique contacts for ${state.domain}`;
+
+    const zeroBox = document.getElementById('zeroResultsBox');
+    if (zeroBox) {
+      if (state.results.length === 0) {
+        zeroBox.style.display = 'flex';
+        let logsHtml = (logs || []).map(l => {
+          const name = SERVICES[l.service]?.name || l.service;
+          if (l.status === 'error') {
+            return `<div class="zero-results-item">❌ <strong>${escapeHtml(name)}:</strong> ${escapeHtml(l.error)}</div>`;
+          } else {
+            return `<div class="zero-results-item">ℹ️ <strong>${escapeHtml(name)}:</strong> Returned 0 contacts</div>`;
+          }
+        }).join('');
+
+        zeroBox.innerHTML = `
+          <div class="zero-results-title">⚠️ No contacts found</div>
+          <div class="zero-results-list">
+            ${logsHtml || '<div class="zero-results-item">No services returned contacts.</div>'}
+          </div>
+          <div style="margin-top: 4px; font-size: 11px; color: var(--text-dim);">
+            Tip: Try adding <strong>Tomba.io</strong> (25 free/mo) or <strong>Serper.dev</strong> (2,500 free) in Settings (⚙️).
+          </div>
+        `;
+      } else {
+        zeroBox.style.display = 'none';
+      }
+    }
 
     // Pattern banner
     if (state.pattern && state.pattern.pattern) {
@@ -511,7 +598,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // ─── Verify All ──────────────────────────────────────────────────
+  // ─── Verify All (Built-in Google DNS MX Verifier) ───────────────
   btnVerifyAll.addEventListener('click', async () => {
     const selected = state.results.filter(c => c.selected !== false);
     if (selected.length === 0) {
@@ -519,14 +606,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    if (!state.settings.apiKeys?.quickemail) {
-      showToast('QuickEmailVerification key not configured in Settings', 'error');
-      settingsModal.style.display = 'flex';
-      return;
-    }
-
     btnVerifyAll.disabled = true;
-    showToast(`Verifying ${selected.length} emails...`, 'info');
+    showToast(`Verifying ${selected.length} emails with Google Public DNS...`, 'info');
 
     try {
       const resp = await chrome.runtime.sendMessage({
@@ -538,7 +619,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         resp.results.forEach(r => {
           updateContactVerification(r.email, r.result);
         });
-        showToast('Verification complete!', 'success');
+        showToast('DNS verification complete!', 'success');
       } else {
         throw new Error(resp?.error || 'Verification failed');
       }

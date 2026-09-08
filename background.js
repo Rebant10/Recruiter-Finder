@@ -33,6 +33,13 @@ async function handleMessage(msg) {
     case 'saveSettings':
       await saveSettings(msg.settings);
       return { success: true };
+    case 'testService':
+      try {
+        const testRes = await testServiceKey(msg.service, msg.apiKey);
+        return { success: true, message: testRes };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
 
     // Search
     case 'resolveDomain':
@@ -114,24 +121,20 @@ async function executeSearch(msg) {
     }).catch(() => {});
   };
 
-  const { results, pattern } = await searchAll(
+  const { results, pattern, logs } = await searchAll(
     domain, role || 'recruiter', location || 'india',
-    targetCount || 20, apiKeys, existingEmails || [], onProgress
+    targetCount || 20, apiKeys, existingEmails || [], onProgress,
+    msg.company || msg.companyName || ''
   );
 
-  return { success: true, results, pattern };
+  return { success: true, results, pattern, logs };
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  VERIFICATION
+//  VERIFICATION (Google Public DNS — Built-in, No Key Needed)
 // ═══════════════════════════════════════════════════════════════════
 
 async function executeVerification(emails) {
-  const apiKeys = await getApiKeys();
-  if (!apiKeys.quickemail) {
-    return { success: false, error: 'QuickEmailVerification API key not configured' };
-  }
-
   const onVerified = (progress) => {
     chrome.runtime.sendMessage({
       action: 'verifyProgress',
@@ -139,7 +142,7 @@ async function executeVerification(emails) {
     }).catch(() => {});
   };
 
-  const results = await bulkVerify(emails, apiKeys.quickemail, onVerified);
+  const results = await bulkVerify(emails, '', onVerified);
   return { success: true, results };
 }
 

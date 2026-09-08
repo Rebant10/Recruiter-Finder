@@ -832,3 +832,55 @@ button {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+.key-input-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.key-input-group .api-key-input {
+  width: 150px;
+}
+
+.btn-test-key {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.zero-results-box {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.zero-results-title {
+  font-weight: 600;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zero-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.zero-results-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+

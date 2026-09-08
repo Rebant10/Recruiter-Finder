@@ -116,6 +116,9 @@
         </div>
       </div>
 
+      <!-- Zero Results Diagnostic Box -->
+      <div id="zeroResultsBox" class="zero-results-box" style="display: none;"></div>
+
       <!-- Pattern Alert Box -->
       <div class="pattern-banner" id="patternBanner" style="display: none;">
         <div class="pattern-info">
@@ -189,7 +192,10 @@
                   <a href="https://hunter.io/users/sign_up" target="_blank" class="service-link">50/mo free ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="hunter" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="hunter" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="hunter">Test</button>
+              </div>
             </div>
 
             <div class="service-row" data-service="snov">
@@ -197,10 +203,13 @@
                 <span class="service-icon">📧</span>
                 <div>
                   <span class="service-name">Snov.io</span>
-                  <a href="https://app.snov.io/register" target="_blank" class="service-link">50/mo free (userId:secret) ↗</a>
+                  <a href="https://app.snov.io/account#/api" target="_blank" class="service-link">50/mo free (userId:secret) ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="snov" placeholder="userId:clientSecret" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="snov" placeholder="userId:clientSecret" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="snov">Test</button>
+              </div>
             </div>
 
             <div class="service-row" data-service="tomba">
@@ -208,10 +217,13 @@
                 <span class="service-icon">🔍</span>
                 <div>
                   <span class="service-name">Tomba.io</span>
-                  <a href="https://app.tomba.io/auth/register" target="_blank" class="service-link">25/mo free ↗</a>
+                  <a href="https://app.tomba.io/auth/register" target="_blank" class="service-link">25/mo free (Gmail ok) ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="tomba" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="tomba" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="tomba">Test</button>
+              </div>
             </div>
 
             <div class="service-row" data-service="getprospect">
@@ -222,7 +234,10 @@
                   <a href="https://getprospect.com/signup" target="_blank" class="service-link">50/mo free ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="getprospect" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="getprospect" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="getprospect">Test</button>
+              </div>
             </div>
 
             <div class="service-row" data-service="prospeo">
@@ -233,7 +248,10 @@
                   <a href="https://app.prospeo.io/register" target="_blank" class="service-link">75/mo free ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="prospeo" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="prospeo" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="prospeo">Test</button>
+              </div>
             </div>
 
             <div class="service-row" data-service="dropcontact">
@@ -244,7 +262,10 @@
                   <a href="https://app.dropcontact.com/signup" target="_blank" class="service-link">50 trial ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="dropcontact" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="dropcontact" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="dropcontact">Test</button>
+              </div>
             </div>
 
             <div class="service-row" data-service="anymailfinder">
@@ -255,23 +276,29 @@
                   <a href="https://anymailfinder.com/signup" target="_blank" class="service-link">100 trial ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="anymailfinder" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="anymailfinder" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="anymailfinder">Test</button>
+              </div>
             </div>
           </div>
 
           <div class="settings-group">
-            <h3 class="settings-group-title">🌐 Web & SERP Search</h3>
-            <p class="settings-group-sub">Finds publicly posted emails via Google search.</p>
+            <h3 class="settings-group-title">🌐 Google & LinkedIn X-Ray Engine (Personal Gmail OK)</h3>
+            <p class="settings-group-sub">Finds real recruiters directly from Google's index of LinkedIn profiles. Zero work email needed.</p>
 
-            <div class="service-row" data-service="serper">
+            <div class="service-row" data-service="serper" style="border-left: 3px solid #22c55e;">
               <div class="service-info">
                 <span class="service-icon">🌐</span>
                 <div>
-                  <span class="service-name">Serper.dev</span>
-                  <a href="https://serper.dev" target="_blank" class="service-link">2,500 credits free ↗</a>
+                  <span class="service-name">Serper.dev (Google Index)</span>
+                  <a href="https://serper.dev" target="_blank" class="service-link">2,500 free queries (Sign in with Google) ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="serper" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="serper" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="serper">Test</button>
+              </div>
             </div>
 
             <div class="service-row" data-service="serpapi">
@@ -282,23 +309,26 @@
                   <a href="https://serpapi.com/users/sign_up" target="_blank" class="service-link">250/mo free ↗</a>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="serpapi" placeholder="API Key" />
+              <div class="key-input-group">
+                <input type="password" class="api-key-input" data-key="serpapi" placeholder="API Key" />
+                <button type="button" class="btn-subtle btn-test-key" data-service="serpapi">Test</button>
+              </div>
             </div>
           </div>
 
           <div class="settings-group">
-            <h3 class="settings-group-title">✓ Email Verification</h3>
-            <p class="settings-group-sub">Verifies deliverability so you never bounce.</p>
+            <h3 class="settings-group-title">✓ Real-Time Email Verification</h3>
+            <p class="settings-group-sub">Built-in Google Public DNS MX verification is enabled by default. Checks real corporate mail servers (Google Workspace, M365) with zero signups or work emails required.</p>
 
-            <div class="service-row" data-service="quickemail">
+            <div class="service-row" style="background: rgba(16, 185, 129, 0.07); border-color: rgba(16, 185, 129, 0.3);">
               <div class="service-info">
                 <span class="service-icon">✓</span>
                 <div>
-                  <span class="service-name">QuickEmailVerification</span>
-                  <a href="https://quickemailverification.com/register" target="_blank" class="service-link">100/day (~3,000/mo) ↗</a>
+                  <span class="service-name" style="color: #34d399;">Google Public DNS Verifier</span>
+                  <span style="display: block; font-size: 10.5px; color: var(--text-dim);">Live MX server verification • Free & Unlimited</span>
                 </div>
               </div>
-              <input type="password" class="api-key-input" data-key="quickemail" placeholder="API Key" />
+              <span class="badge badge-valid" style="font-size: 11px;">Active</span>
             </div>
           </div>
 
